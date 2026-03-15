@@ -589,6 +589,31 @@ html, body {
 .expr-op:hover { background: var(--surface); border-color: var(--text); }
 .expr-op:active { transform: scale(0.88); }
 
+.paren-btn {
+  background: none;
+  border: none;
+  font-family: var(--ff);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--border-dark);
+  opacity: 0.25;
+  cursor: pointer;
+  padding: 0;
+  min-width: 18px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.12s, color 0.12s, transform 0.08s;
+  flex-shrink: 0;
+}
+.paren-btn:hover { opacity: 0.6; }
+.paren-btn.active {
+  color: var(--gold);
+  opacity: 1;
+}
+.paren-btn:active { transform: scale(0.85); }
+
 .expr-value {
   font-size: 0.95rem;
   font-weight: 900;

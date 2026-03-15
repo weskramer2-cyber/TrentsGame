@@ -21,6 +21,8 @@ function freshState(playerCount) {
     targets,        // [{value, owner: null | 0 | 1}]
     path: [],       // selected cell indices
     ops: [],        // operators between cells (ops.length === path.length - 1)
+    openParens: new Set(),   // path positions with '(' before the number
+    closeParens: new Set(),  // path positions with ')' after the number
     player: 0,      // current player (0 or 1)
     scores: [[], []], // target indices claimed by each player
     playerCount,
@@ -71,6 +73,40 @@ function evalLR(nums, ops) {
     }
   }
   return result;
+}
+
+// ── Expression evaluator with optional parentheses ─────────────────────────
+// Returns null for invalid (unbalanced parens, div-by-zero, non-integer result)
+function evalExpr(nums, ops, openParens, closeParens) {
+  if (!openParens.size && !closeParens.size) return evalLR(nums, ops);
+
+  let expr = '';
+  for (let i = 0; i < nums.length; i++) {
+    if (openParens.has(i)) expr += '(';
+    expr += nums[i];
+    if (closeParens.has(i)) expr += ')';
+    if (i < ops.length) expr += ops[i];
+  }
+
+  // Only allow digits, arithmetic operators, and parens
+  if (!/^[\d+\-*/().]+$/.test(expr)) return null;
+
+  // Verify balanced parens
+  let depth = 0;
+  for (const ch of expr) {
+    if (ch === '(') depth++;
+    else if (ch === ')') { depth--; if (depth < 0) return null; }
+  }
+  if (depth !== 0) return null;
+
+  try {
+    // eslint-disable-next-line no-new-func
+    const result = new Function(`'use strict'; return (${expr})`)();
+    if (!Number.isFinite(result) || !Number.isInteger(result)) return null;
+    return result;
+  } catch (e) {
+    return null;
+  }
 }
 
 // ── Target generation ──────────────────────────────────────────────────────
@@ -166,8 +202,11 @@ function handleCellClick(idx) {
     G.ops = [];
   } else if (path[path.length - 1] === idx) {
     // Tap last cell again → remove it
+    const removedPos = G.path.length - 1;
     G.path.pop();
     G.ops.pop();
+    G.openParens.delete(removedPos);
+    G.closeParens.delete(removedPos);
   } else if (path.includes(idx)) {
     shakeCell(idx);
     showToast('Already in path', 'error');
@@ -190,9 +229,23 @@ function cycleOperator(opIdx) {
   renderAll();
 }
 
+function toggleOpenParen(pos) {
+  if (G.openParens.has(pos)) G.openParens.delete(pos);
+  else G.openParens.add(pos);
+  renderAll();
+}
+
+function toggleCloseParen(pos) {
+  if (G.closeParens.has(pos)) G.closeParens.delete(pos);
+  else G.closeParens.add(pos);
+  renderAll();
+}
+
 function clearSelection() {
   G.path = [];
   G.ops = [];
+  G.openParens = new Set();
+  G.closeParens = new Set();
   renderAll();
 }
 
@@ -200,9 +253,9 @@ function submitExpression() {
   if (G.path.length < 2) { showToast('Select at least 2 numbers', 'error'); return; }
 
   const nums = currentNums();
-  const val = evalLR(nums, G.ops);
+  const val = evalExpr(nums, G.ops, G.openParens, G.closeParens);
 
-  if (val === null) { showToast('Invalid — check division', 'error'); return; }
+  if (val === null) { showToast('Invalid — check parens / division', 'error'); return; }
 
   const tIdx = G.targets.findIndex(t => t.owner === null && t.value === val);
   if (tIdx === -1) {
@@ -366,7 +419,7 @@ function renderGrid() {
 
 function renderTargets() {
   const el = document.getElementById('targets');
-  const curVal = G.path.length >= 2 ? evalLR(currentNums(), G.ops) : null;
+  const curVal = G.path.length >= 2 ? evalExpr(currentNums(), G.ops, G.openParens, G.closeParens) : null;
 
   el.innerHTML = '';
   G.targets.forEach((t, i) => {
@@ -404,10 +457,24 @@ function renderExpression() {
   }
 
   G.path.forEach((cellIdx, pos) => {
+    const openBtn = document.createElement('button');
+    openBtn.className = `paren-btn${G.openParens.has(pos) ? ' active' : ''}`;
+    openBtn.textContent = '(';
+    openBtn.setAttribute('aria-label', 'Toggle open parenthesis');
+    openBtn.addEventListener('click', () => toggleOpenParen(pos));
+    tokensEl.appendChild(openBtn);
+
     const numSpan = document.createElement('span');
     numSpan.className = 'expr-num';
     numSpan.textContent = G.grid[cellIdx];
     tokensEl.appendChild(numSpan);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = `paren-btn${G.closeParens.has(pos) ? ' active' : ''}`;
+    closeBtn.textContent = ')';
+    closeBtn.setAttribute('aria-label', 'Toggle close parenthesis');
+    closeBtn.addEventListener('click', () => toggleCloseParen(pos));
+    tokensEl.appendChild(closeBtn);
 
     if (pos < G.path.length - 1) {
       const opBtn = document.createElement('button');
@@ -419,7 +486,7 @@ function renderExpression() {
     }
   });
 
-  const val = evalLR(currentNums(), G.ops);
+  const val = evalExpr(currentNums(), G.ops, G.openParens, G.closeParens);
   if (val === null) {
     valueEl.textContent = '= ✗';
     valueEl.className = 'expr-value invalid';
